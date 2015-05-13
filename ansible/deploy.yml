@@ -1,0 +1,112 @@
+# For deploy to remote machine use:
+# $ ansible-playbook ansible/deploy.yml -K
+---
+- name: ansible application deploy
+  hosts: osen
+  remote_user: srvadmin
+  vars:
+    env: all # (all|dev|prod)
+    repository_address: git@bitbucket.org:osenwebdevelop/transformation.git
+    version: HEAD # What version of the repository to check out. This can be the full 40-character SHA-1 hash, the literal string HEAD, a branch name, or a tag name.
+    project_path: /var/www/sites/transformation
+    web_path: "{{ project_path }}/web"
+    console_path: "{{ project_path }}/app/console"
+    cache_path: "{{ project_path }}/app/cache"
+    logs_path: "{{ project_path }}/app/logs"
+    uploads_path: "{{ web_path }}/uploads"
+
+  pre_tasks:
+    - name: enable maintenance mode
+      sudo: yes
+      command: chmod -R 0777 "{{ cache_path }}"
+      args:
+        removes: "{{ cache_path }}"
+
+  tasks:
+    # source
+    - name: checkout repository
+      git: repo="{{ repository_address }}"
+           dest="{{ project_path }}"
+           version="{{ version }}"
+
+    - name: enable maintenance mode
+      command: cp "{{ web_path }}/_maintenance.html" "{{ web_path }}/maintenance.html"
+      args:
+        creates: "{{ web_path }}/maintenance.html"
+
+    - name: ensure app/console permissions are set to 0755
+      sudo: yes
+      file: path="{{ console_path }}" mode=0755
+
+    # vendor dependencies
+    - name: install composer vendor dependencies
+      composer: working_dir="{{ project_path }}" no_dev=no
+
+    - name: remove bower vendor dependencies
+      file: path="{{ web_path }}/bower_components" state=absent
+
+    - name: restore bower_components dir
+      file: path="{{ web_path }}/bower_components" state=directory
+
+    - name: restore .gitkeep file
+      file: path="{{ web_path }}/bower_components/.gitkeep" state=touch
+
+    - name: install bower vendor dependencies
+      bower: path="{{ web_path }}"
+
+    # database...
+
+    # cache
+    - name: clear dev cache
+      sudo: yes
+      command: php "{{ console_path }}" cache:clear --env=dev --no-warmup
+
+    - name: clear prod cache
+      sudo: yes
+      command: php "{{ console_path }}" cache:clear --env=prod --no-warmup
+
+    - name: warm up dev cache
+      sudo: yes
+      command: php "{{ console_path }}" cache:warmup --env=dev
+
+    - name: warm up prod cache
+      sudo: yes
+      command: php "{{ console_path }}" cache:warmup --env=prod
+
+    # assets
+    - name: dump dev assets
+      sudo: yes
+      command: php "{{ console_path }}" assetic:dump --env=dev
+
+    - name: dump prod assets
+      sudo: yes
+      command: php "{{ console_path }}" assetic:dump --env=prod
+
+  post_tasks:
+    # permissions
+    - name: ensure directories permissions are set to 0755
+      sudo: yes
+      command: find "{{ project_path }}" -type d -exec chmod 0755 {} \;
+
+    - name: ensure files permissions are set to 0644
+      sudo: yes
+      command: find "{{ project_path }}" -type f -exec chmod 0644 {} \;
+
+    - name: ensure cache dir permissions are set to 0777
+      sudo: yes
+      file: path="{{ cache_path }}" mode=0777 recurse=yes
+
+    - name: ensure logs dir permissions are set to 0777
+      sudo: yes
+      file: path="{{ logs_path }}" mode=0777 recurse=yes
+
+    - name: ensure uploads dir permissions are set to 0777
+      sudo: yes
+      file: path="{{ uploads_path }}" mode=0777 recurse=yes
+
+    - name: ensure app/console permissions are set to 0755
+      sudo: yes
+      file: path="{{ console_path }}" mode=0755
+
+    - name: disable maintenance mode
+      file: path="{{ web_path }}/maintenance.html" state=absent
