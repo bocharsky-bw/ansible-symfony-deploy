@@ -3,12 +3,12 @@
 ---
 - name: ansible application deploy
   hosts: osen
-  remote_user: srvadmin
+  remote_user: root
   vars:
     env: all # (all|dev|prod)
-    repository_address: git@bitbucket.org:osenwebdevelop/transformation.git
+    repository_address: git@github.com:symfony/symfony-demo.git
     version: HEAD # What version of the repository to check out. This can be the full 40-character SHA-1 hash, the literal string HEAD, a branch name, or a tag name.
-    project_path: /var/www/sites/transformation
+    project_path: /var/www/html
     web_path: "{{ project_path }}/web"
     console_path: "{{ project_path }}/app/console"
     cache_path: "{{ project_path }}/app/cache"
